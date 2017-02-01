@@ -30,7 +30,7 @@ public class FileSystemStorageService implements StorageService {
 	@Override
 	public void init() {
 		try {
-			Files.createDirectory(this.rootLocation);
+			Files.createDirectories(this.rootLocation);
 		} catch (IOException e) {
 			throw new StorageException("Could not initialize storage", e);
 		}
@@ -38,12 +38,22 @@ public class FileSystemStorageService implements StorageService {
 
 	@Override
 	public void store(MultipartFile file) {
+		store(file, null);
+	}
+
+	@Override
+	public void store(MultipartFile file, String key) {
+		key = (key == null) ? "" : key;
+
 		try {
 			if (file.isEmpty()) {
 				throw new StorageException("Failed to store empty file: " + file.getOriginalFilename());
 			}
 
-			Files.copy(file.getInputStream(), this.rootLocation.resolve(file.getOriginalFilename()));
+			Path fileParentDirectory = this.rootLocation.resolve(key);
+
+			Files.createDirectories(fileParentDirectory);
+			Files.copy(file.getInputStream(), fileParentDirectory.resolve(file.getOriginalFilename()));
 		} catch (IOException e) {
 			throw new StorageException("Failed to store file: " + file.getOriginalFilename(), e);
 		}
@@ -52,8 +62,9 @@ public class FileSystemStorageService implements StorageService {
 	@Override
 	public Stream<Path> loadAll() {
 		try {
-			return Files.walk(this.rootLocation, 1)
+			return Files.walk(this.rootLocation, Integer.MAX_VALUE)
 					.filter(path -> !path.equals(this.rootLocation))
+					.filter(path -> !path.toFile().isDirectory())
 					.map(path -> this.rootLocation.relativize(path));
 		} catch (IOException e) {
 			throw new StorageException("Failed to read stored files", e);
@@ -61,14 +72,29 @@ public class FileSystemStorageService implements StorageService {
 	}
 
 	@Override
-	public Path load(String filename) {
+	public Stream<Path> load(String key) {
+		if(!this.rootLocation.resolve(key).toFile().exists()) {
+			return Stream.empty();
+		}
+		
+		try {
+			return Files.walk(this.rootLocation.resolve(key), 1)
+					.filter(path -> !path.toFile().isDirectory())
+					.map(path -> this.rootLocation.relativize(path));
+		} catch (IOException e) {
+			throw new StorageException("Failed to read stored files", e);
+		}
+	}
+
+	@Override
+	public Path loadAsPath(String filename) {
 		return rootLocation.resolve(filename);
 	}
 
 	@Override
 	public Resource loadAsResource(String filename) {
 		try {
-			Path file = load(filename);
+			Path file = loadAsPath(filename);
 			Resource resource = new UrlResource(file.toUri());
 
 			if (resource.exists() || resource.isReadable()) {
@@ -84,5 +110,20 @@ public class FileSystemStorageService implements StorageService {
 	@Override
 	public void deleteAll() {
 		FileSystemUtils.deleteRecursively(this.rootLocation.toFile());
+	}
+	
+	@Override
+	public void delete(String key) {
+		if(!this.rootLocation.resolve(key).toFile().exists()) {
+			return;
+		}
+		
+		try {
+			Files.walk(this.rootLocation.resolve(key), 1)
+				.filter(path -> !path.toFile().isDirectory())
+				.forEach(path -> path.toFile().delete());
+		} catch (IOException e) {
+			throw new StorageException("Failed to delete files", e);
+		}
 	}
 }

@@ -12,7 +12,6 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -32,8 +31,8 @@ public class FileUploadController {
 
 	@GetMapping("/")
 	public String listUploadedFiles(Model model) {
-		List<String> files = storageService.loadAll().collect(Collectors.toList()).stream()
-				.map(path -> path.getFileName().toString())
+		List<String> files = storageService.loadAll()
+				.map(path -> path.toString().replace("\\", "/"))
 				.collect(Collectors.toList());
 		
 		Map<String, String> fileLinks = files.stream()
@@ -45,7 +44,7 @@ public class FileUploadController {
 		Map<String, String> fileJobLinks = files.stream()
 				.collect(Collectors.toMap(
 						filename -> filename, 
-						filename -> MvcUriComponentsBuilder.fromMethodName(JobLauncherController.class, "launchJob", storageService.load(filename).toAbsolutePath().toUri().toString()).build().toString()
+						filename -> MvcUriComponentsBuilder.fromMethodName(JobLauncherController.class, "launchJob", storageService.loadAsPath(filename).toAbsolutePath().toUri().toString()).build().toString()
 				));
 		
 		model.addAttribute("files", files);
@@ -55,9 +54,9 @@ public class FileUploadController {
 		return "uploadForm";
 	}
 
-	@GetMapping("/files/{filename:.+}")
+	@GetMapping("/files")
 	@ResponseBody
-	public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+	public ResponseEntity<Resource> serveFile(@RequestParam("filename") String filename) {
 		Resource file = storageService.loadAsResource(filename);
 
 		return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"").body(file);
@@ -65,7 +64,8 @@ public class FileUploadController {
 
 	@PostMapping("/")
 	public String handleFileUpload(@RequestParam("file") MultipartFile file, RedirectAttributes redirectAttributes) {
-		storageService.store(file);
+		storageService.store(file, "TEST");
+		
 		redirectAttributes.addFlashAttribute("message", "You successfully uploaded " + file.getOriginalFilename() + "!");
 
 		return "redirect:/";
