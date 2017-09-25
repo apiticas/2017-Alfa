@@ -1,4 +1,4 @@
-## Alfa Project
+## Example of Spring Boot
 
 ##### Using:
 * Java 8
